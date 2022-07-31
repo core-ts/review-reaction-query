@@ -1,5 +1,5 @@
 import { Attributes, buildToDelete, buildToInsert, DB, metadata, Repository, SqlLoader, Statement, StringMap } from 'query-core';
-import { CommentRepository, InfoRepository, Reaction, ReactionRepository } from './core-query';
+import { CommentFilter, CommentRepository, InfoRepository, Reaction, ReactionRepository } from './core-query';
 
 export * from './core-query';
 
@@ -209,7 +209,7 @@ export class SqlReactionRepository implements ReactionRepository {
     this.authorCol = (authorCol && authorCol.length > 0 ? authorCol : this.parentAuthor);
     this.exist = this.exist.bind(this);
     this.save = this.save.bind(this);
-    this.remove = this.remove.bind(this); 
+    this.remove = this.remove.bind(this);
   }
   col: string;
   parentId: string;
@@ -246,4 +246,122 @@ export class SqlReactionRepository implements ReactionRepository {
       return Promise.resolve(0);
     }
   }
+}
+export interface URL {
+  id: string;
+  url: string;
+}
+export interface SearchResult<T> {
+  list: T[];
+  total?: number;
+  last?: boolean;
+  nextPageToken?: string;
+}
+export type Search<T, F> = (s: F, limit?: number, offset?: number | string, fields?: string[]) => Promise<SearchResult<T>>;
+export interface BaseComment {
+  userId: string;
+  userURL: string;
+}
+export interface CommentsRepository<T> {
+  load(commentId: string, ctx?: any): Promise<T | null>;
+  getComments(id: string, author: string, limit?: number): Promise<T[]>;
+}
+// tslint:disable-next-line:max-classes-per-file
+export class BaseCommentQuery<T extends BaseComment> {
+  constructor(protected repository: CommentsRepository<T>, protected queryURL?: (ids: string[]) => Promise<URL[]>) {
+    this.load = this.load.bind(this);
+    this.getComment = this.getComment.bind(this);
+    this.getComments = this.getComments.bind(this);
+  }
+  getComment(id: string, ctx?: any): Promise<T | null> {
+    return this.load(id, ctx);
+  }
+  load(id: string, ctx?: any): Promise<T | null> {
+    return this.repository.load(id, ctx).then(comment => {
+      if (comment && this.queryURL) {
+        return this.queryURL([id]).then(urls => {
+          const i = binarySearch(urls, comment.userId);
+          if (i >= 0) {
+            comment.userURL = urls[i].url;
+          }
+          return comment;
+        });
+      } else {
+        return comment;
+      }
+    });
+  }
+  getComments(id: string, author: string, limit?: number): Promise<T[]> {
+    return this.repository.getComments(id, author, limit).then(comments => {
+      if (this.queryURL) {
+        const ids: string[] = [];
+        for (const comment of comments) {
+          ids.push(comment.userId);
+        }
+        return this.queryURL(ids).then(urls => {
+          for (const comment of comments) {
+            const i = binarySearch(urls, comment.userId);
+            if (i >= 0) {
+              comment.userURL = urls[i].url;
+            }
+          }
+          return comments;
+        });
+      } else {
+        return comments;
+      }
+    });
+  }
+}
+// tslint:disable-next-line:max-classes-per-file
+export class CommentQuery<T extends BaseComment, F> extends BaseCommentQuery<T> {
+  constructor(protected find: Search<T, F>, repository: CommentsRepository<T>, queryURL?: (ids: string[]) => Promise<URL[]>) {
+    super(repository, queryURL);
+    this.search = this.search.bind(this);
+  }
+  search(s: F, limit?: number, offset?: number | string, fields?: string[]): Promise<SearchResult<T>> {
+    return this.find(s, limit, offset, fields).then(res => {
+      if (!this.queryURL) {
+        return res;
+      } else {
+        if (res.list && res.list.length > 0) {
+          const ids: string[] = [];
+          for (const rate of res.list) {
+            ids.push(rate.userId);
+          }
+          return this.queryURL(ids).then(urls => {
+            for (const rate of res.list) {
+              const i = binarySearch(urls, rate.userId);
+              if (i >= 0) {
+                rate.userURL = urls[i].url;
+              }
+            }
+            return res;
+          });
+        } else {
+          return res;
+        }
+      }
+    });
+  }
+}
+function binarySearch(ar: URL[], el: string): number {
+  let m = 0;
+  let n = ar.length - 1;
+  while (m <= n) {
+    // tslint:disable-next-line:no-bitwise
+    const k = (n + m) >> 1;
+    const cmp = compare(el, ar[k].id);
+    if (cmp > 0) {
+      m = k + 1;
+    } else if (cmp < 0) {
+      n = k - 1;
+    } else {
+      return k;
+    }
+  }
+  return -m - 1;
+}
+function compare(s1: string, s2: string): number {
+  return s1.localeCompare(s2);
 }
