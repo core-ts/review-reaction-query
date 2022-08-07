@@ -1,6 +1,6 @@
 {
   "name": "reaction-query",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "rate-query",
   "main": "./lib/index.js",
   "types": "./src/index.ts",

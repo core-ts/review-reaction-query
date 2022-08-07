@@ -260,7 +260,7 @@ export interface SearchResult<T> {
 export type Search<T, F> = (s: F, limit?: number, offset?: number | string, fields?: string[]) => Promise<SearchResult<T>>;
 export interface BaseComment {
   userId: string;
-  userURL: string;
+  userURL?: string;
 }
 export interface CommentsRepository<T> {
   load(commentId: string, ctx?: any): Promise<T | null>;
